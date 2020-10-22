@@ -1,4 +1,4 @@
-import json
+import csv
 from datetime import datetime
 
 import lxml.html
@@ -19,8 +19,12 @@ class MotozemPantsSpider(scrapy.Spider):
                 "membrán",
             ]
 
-        self.start_time = str(datetime.now())
 
+        self.csv_filename = f"all_results_{str(datetime.now())}.csv"
+        self.csv_header =["page", "price", "interesting", *self.keywords]
+        with open(self.csv_filename, "w") as f:
+            csv_writer = csv.DictWriter(f, self.csv_header)
+            csv_writer.writeheader()
 
     def parse(self, response):
         pants = response.css("a.product")
@@ -38,12 +42,10 @@ class MotozemPantsSpider(scrapy.Spider):
             k: False for k in self.keywords
         }
 
-        # TODO: this does not actually work, since it fails to get text from children
-        #       probably need to use beautiful soup or something
+        price = response.css(".total-price-vat::text").get()
         desc = " ".join(response.css("div.description").getall())
 
         desc_text = lxml.html.fromstring(desc).text_content()
-        self.logger.debug("desc_text: %s", desc_text)
         for k in matched_keywords:
             # if any keyword is in desc, mark it as matched
             if k in desc_text:
@@ -64,18 +66,14 @@ class MotozemPantsSpider(scrapy.Spider):
         page = response.url
         result = {
             "page": page,
-            "matched keywords": matched_keywords,
+            "price": float("".join(d for d in price if d.isdigit() or d in [",", "."])),
             "interesting": all(matched_keywords.values()),
+            **matched_keywords,
         }
         yield result
-        j = json.dumps(result, ensure_ascii=False, indent=2)
-        with open(f"all_results_{self.start_time}.json", "a+") as f:
-            f.write(j)
-
-        if result["interesting"]:
-            with open(f"interesting_results_{self.start_time}.json", "a+") as f:
-                f.write(j)
-
+        with open(self.csv_filename, "a") as f:
+            writer = csv.DictWriter(f, self.csv_header, quoting=csv.QUOTE_NONNUMERIC)
+            writer.writerow(result)
 
 
 
